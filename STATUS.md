@@ -31,7 +31,23 @@ rather have it installed system-wide, run that cask install yourself.
 - Channel plan recovered from the radio, which was the only surviving copy —
   the Idaho/Utah/Nevada repeater list is back, round-tripping to zero byte diffs
 - Function catalogue: 156 entries, recovered from Ghidra plate comments
-- Firmware builds: text 36,980 / data 108 / bss 7,620
+- Firmware builds: text 39,876 / data 108 / bss 7,636
+- **Knob picker + zones-as-filter implemented** on branch
+  `feature/knob-picker-zone-filter`, including the firmware's first UI event
+  dispatcher — nothing had ever called `event_poll()`, so input was being
+  posted and discarded
+
+## Next on the radio
+
+The feature branch **builds but has never run on hardware**. Worth testing in
+this order, since each depends on the one before:
+
+1. Does `task_ui` drain the queue without starving anything? It is the first
+   consumer the queue has ever had.
+2. Does the picker open on the first detent and NOT move the highlight?
+3. Does MENU commit and actually retune? `ui_commit_channel` calls
+   `channel_to_vfo`, which is not verified.
+4. Does `*` open the checklist, and does toggling survive a power cycle?
 
 ## Open
 
@@ -41,6 +57,8 @@ rather have it installed system-wide, run that cask install yourself.
   regression and then undoes it.
 - The Ghidra project's 53 stale `0x080xxxxx`-named functions are still there.
 - `port_catalog.py` and `rf_register_match.py` are not yet rebuilt.
+- Picker frequency mode is declared but not implemented; channel mode only.
+- `*` opening the zone checklist is provisional; it belongs behind a Menu entry.
 - Transmit power: no field for it has been found in the channel record.
 - Zone-enable state is derived at boot, not persisted — the filter feature needs
   its own storage.
