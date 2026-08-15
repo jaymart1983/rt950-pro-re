@@ -29,16 +29,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rt950_codec import (CHAN_ADDR, CHAN_SIZE, CHAN_MAX, NAME_OFFSET, NAME_SIZE,
                          RX_OFFSET, TX_OFFSET, RXTONE_OFFSET, TXTONE_OFFSET,
-                         FLAGS_OFFSET, RX_ONLY,
+                         SIGNAL_OFFSET, PTTID_OFFSET, POWER_OFFSET,
+                         FLAGS_OFFSET, RESERVED_OFFSET, RX_ONLY,
+                         POWER_LOW, POWER_MID, POWER_HIGH,
                          ZONE_NAME_ADDR, ZONE_NAME_STRIDE, ZONE_NAME_SIZE, ZONE_MAX,
                          enc_freq, dec_freq, enc_tone, dec_tone, enc_name, dec_name)
 
-# Bytes the radio sets but whose meaning is not established. Every one of the 91
-# programmed records has 00 here and FF at 0x10-0x13, so this is what a record
-# the radio wrote looks like -- but it is a copied default, not an understood
-# field. Notably, transmit power is NOT known to live anywhere in this record.
-UNMODELLED_0C = b"\x00\x00\x00"
-UNMODELLED_10 = b"\xFF\xFF\xFF\xFF"
+POWER = {"low": POWER_LOW, "mid": POWER_MID, "high": POWER_HIGH}
 
 # Default flags: 0x44 = wide (bit6) + scan-add (bit2), mute mode 0, no lockout.
 FLAG_WIDE     = 0x40
@@ -46,12 +43,11 @@ FLAG_SCAN     = 0x04
 FLAG_LOCKOUT  = 0x08
 FLAG_DEFAULT  = FLAG_WIDE | FLAG_SCAN
 
-# Transmit power: no field for it has been located in the channel record.
-# Every observed record is byte-identical outside freq/tone/flags/name.
 
 
 def make(rx, tx=None, txtone=None, rxtone=None, name="",
-         flags=FLAG_DEFAULT, narrow=False, scan=True, rx_only=False):
+         flags=FLAG_DEFAULT, narrow=False, scan=True, rx_only=False,
+         power="low", scramble=0, pttid=0, signal=0):
     """Build one 32-byte channel record.
 
     rx/tx are Hz (ints) or MHz (floats). tx defaults to rx (simplex).
@@ -78,9 +74,12 @@ def make(rx, tx=None, txtone=None, rxtone=None, name="",
     rec[TX_OFFSET:TX_OFFSET + 4]         = enc_freq(tx_hz)
     rec[RXTONE_OFFSET:RXTONE_OFFSET + 2] = struct.pack("<H", enc_tone(rxtone))
     rec[TXTONE_OFFSET:TXTONE_OFFSET + 2] = struct.pack("<H", enc_tone(txtone))
-    rec[0x0C:0x0F]                       = UNMODELLED_0C
+    rec[SIGNAL_OFFSET]                   = signal
+    rec[PTTID_OFFSET]                    = pttid
+    pw = POWER[power] if isinstance(power, str) else int(power)
+    rec[POWER_OFFSET]                    = (pw & 0x0F) | ((scramble & 0x0F) << 4)
     rec[FLAGS_OFFSET]                    = f
-    rec[0x10:0x14]                       = UNMODELLED_10
+    rec[RESERVED_OFFSET:RESERVED_OFFSET + 4] = b"\xFF" * 4
     rec[NAME_OFFSET:NAME_OFFSET + NAME_SIZE] = enc_name(name, NAME_SIZE)
     return bytes(rec)
 
@@ -114,9 +113,11 @@ def selftest(dump: Path) -> int:
         rebuilt[TX_OFFSET:TX_OFFSET + 4]         = enc_freq(tx)
         rebuilt[RXTONE_OFFSET:RXTONE_OFFSET + 2] = struct.pack("<H", rxt)
         rebuilt[TXTONE_OFFSET:TXTONE_OFFSET + 2] = struct.pack("<H", txt)
-        rebuilt[0x0C:0x0F]                       = orig[0x0C:0x0F]
+        rebuilt[SIGNAL_OFFSET]                   = orig[SIGNAL_OFFSET]
+        rebuilt[PTTID_OFFSET]                    = orig[PTTID_OFFSET]
+        rebuilt[POWER_OFFSET]                    = orig[POWER_OFFSET]
         rebuilt[FLAGS_OFFSET]                    = orig[FLAGS_OFFSET]
-        rebuilt[0x10:0x14]                       = orig[0x10:0x14]
+        rebuilt[RESERVED_OFFSET:RESERVED_OFFSET + 4] = orig[RESERVED_OFFSET:RESERVED_OFFSET + 4]
         rebuilt[NAME_OFFSET:NAME_OFFSET + NAME_SIZE] = enc_name(name, NAME_SIZE)
 
         # Unmodelled bytes are copied above, so any mismatch here is a genuine

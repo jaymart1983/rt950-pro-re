@@ -74,10 +74,12 @@ Hertzz58's README, describing the bootloader.
 0x04  4  tx frequency    same, or FF FF FF FF = receive-only
 0x08  2  rx tone         little-endian, 0 = carrier squelch
 0x0A  2  tx tone         little-endian, 0 = none
-0x0C  3  always 00       unmodelled
-0x0F  1  flags           bit6 wide, bits5-4 mute, bit3 lockout,
-                         bit2 scan add, bit0 code break
-0x10  4  always FF       unmodelled
+0x0C  1  signal code     DTMF group 0-14
+0x0D  1  PTT-ID          0 off, 1 BOT, 2 EOT, 3 both
+0x0E  1  power[3:0] / scramble[7:4]
+0x0F  1  flags           bit6 wide, bit3 busy lockout, bit2 scan add,
+                         bit1 tx enable, bit0 rx modulation
+0x10  4  reserved        FF in every record observed
 0x14 12  name            ASCII, 0xFF-padded
 ```
 
@@ -91,10 +93,17 @@ held the code directly; the channel was fine and the reading was wrong.
 
 **The flag byte is at 0x0F, not 0x0C.** An earlier version of this document put
 flags at 0x0C and transmit power at 0x0D, derived from the *field order* in the
-RT-900 vendor struct without checking offsets against data. No field for
-transmit power has been located anywhere in the record. Bytes 0x0C-0x0E and
-0x10-0x13 are constant across all 91 programmed records, so nothing can be
-concluded about them; the tooling copies them through rather than guessing.
+RT-900 vendor struct without checking offsets against data.
+
+The 0x0C-0x0E meanings come from Hertzz58's `channel.h`, which documents them
+from the OEM V0.27 binary and independently agrees that flags sit at 0x0F. Every
+programmed record here holds `00 00 00` there, which is consistent with those
+meanings but **confirms nothing** — one value across all 91 records cannot
+distinguish between field layouts. Marked *derived*, not *confirmed*, until a
+radio programmed with mixed power levels is dumped.
+
+I had briefly written that no transmit-power field existed. It does; I had not
+read the header in the fork I was already working in.
 
 Verification: `build_channels.py --selftest` re-encodes every programmed record
 and requires byte-identical output. 91/91 pass.

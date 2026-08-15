@@ -23,25 +23,37 @@ BANK_CH_NUM     = 64
 #   0x04  4  tx frequency    same, or FF FF FF FF for a receive-only channel
 #   0x08  2  rx tone         little-endian; 0 = carrier squelch
 #   0x0A  2  tx tone         little-endian; 0 = no tone
-#   0x0C  3  (always 00 in every record observed -- unmodelled)
-#   0x0F  1  flags           bit6 wide, bits5-4 mute mode, bit3 lockout,
-#                            bit2 scan add, bit0 code break
-#   0x10  4  (always FF in every record observed -- unmodelled)
+#   0x0C  1  signal code     DTMF group 0-14
+#   0x0D  1  PTT-ID          0 off, 1 BOT, 2 EOT, 3 both
+#   0x0E  1  power[3:0] / scramble[7:4]
+#   0x0F  1  flags           bit6 wide, bit3 busy lockout, bit2 scan add,
+#                            bit1 tx enable, bit0 rx modulation
+#   0x10  4  reserved        FF in every record observed
 #   0x14 12  name            ASCII, 0xFF-padded
 #
 # The flag byte is at 0x0F, NOT 0x0C. An earlier reconstruction put flags at
 # 0x0C and power at 0x0D purely from the vendor struct's field ORDER, without
-# checking the offsets against real data; the selftest caught it. Bytes 0x0C-0x0E
-# and 0x10-0x13 are constant across all 91 programmed records here, so nothing
-# can be concluded about them -- including where transmit power lives. They are
-# copied through verbatim rather than guessed at.
-RX_OFFSET    = 0x00
-TX_OFFSET    = 0x04
+# checking offsets against real data; the selftest caught it.
+#
+# The 0x0C-0x0E meanings come from Hertzz58's channel.h, which documents them
+# from the OEM V0.27 binary, and are consistent with this dump: every programmed
+# record has 00 00 00 there -- signal code 0, PTT-ID off, power 0, scramble off.
+# Because all 91 records share one value, the dump CONFIRMS nothing about these
+# fields on its own; it only fails to contradict them. Treat as derived, not
+# confirmed, until a radio programmed with mixed power levels is dumped.
+RX_OFFSET     = 0x00
+TX_OFFSET     = 0x04
 RXTONE_OFFSET = 0x08
 TXTONE_OFFSET = 0x0A
-FLAGS_OFFSET = 0x0F
-NAME_OFFSET  = 0x14
-NAME_SIZE    = 12
+SIGNAL_OFFSET = 0x0C
+PTTID_OFFSET  = 0x0D
+POWER_OFFSET  = 0x0E    # low nibble power, high nibble scramble
+FLAGS_OFFSET  = 0x0F
+RESERVED_OFFSET = 0x10
+NAME_OFFSET   = 0x14
+NAME_SIZE     = 12
+
+POWER_LOW, POWER_MID, POWER_HIGH = 0, 1, 2
 
 RX_ONLY = b"\xFF\xFF\xFF\xFF"   # tx field of a receive-only channel (NOAA etc)
 
