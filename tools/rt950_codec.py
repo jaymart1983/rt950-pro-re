@@ -53,7 +53,12 @@ RESERVED_OFFSET = 0x10
 NAME_OFFSET   = 0x14
 NAME_SIZE     = 12
 
-POWER_LOW, POWER_MID, POWER_HIGH = 0, 1, 2
+# Power encoding is INVERTED from the obvious guess: 0 is HIGH, not low.
+# flash_layout.h in the firmware repo documents "Power[3:0] 0=High, 1=Mid,
+# 2=Low" from the OEM V0.27 binary. Every record in the dump holds 0, so the
+# radio's channels are all at HIGH power -- an earlier version of this file
+# assumed 0=low and would have silently written the wrong level.
+POWER_HIGH, POWER_MID, POWER_LOW = 0, 1, 2
 
 RX_ONLY = b"\xFF\xFF\xFF\xFF"   # tx field of a receive-only channel (NOAA etc)
 

@@ -47,13 +47,16 @@ FLAG_DEFAULT  = FLAG_WIDE | FLAG_SCAN
 
 def make(rx, tx=None, txtone=None, rxtone=None, name="",
          flags=FLAG_DEFAULT, narrow=False, scan=True, rx_only=False,
-         power="low", scramble=0, pttid=0, signal=0):
+         power="high", scramble=0, pttid=0, signal=0):
     """Build one 32-byte channel record.
 
     rx/tx are Hz (ints) or MHz (floats). tx defaults to rx (simplex).
     txtone is what we transmit; rxtone is the tone squelch we require.
     rx_only=True (or tx=None with rx_only) writes the FF FF FF FF tx sentinel,
     which is how the OEM marks NOAA and other listen-only channels.
+
+    power defaults to "high" because that is what every record on the radio
+    holds. Note the encoding is inverted -- high is stored as 0.
     """
     def hz(v):
         if v is None:

@@ -39,17 +39,54 @@ rather have it installed system-wide, run that cask install yourself.
   dispatcher — nothing had ever called `event_poll()`, so input was being
   posted and discarded
 
-## Next on the radio
+## Hardware test, 2026-08-15 — custom firmware does NOT run on this radio
+
+Flashed and tested. Result: the custom firmware boots but is unusable, and
+**this is not caused by the picker/zone work**. Unmodified upstream `main`,
+built with the same toolchain, fails identically. The feature branch is
+exonerated; it has still never been meaningfully exercised.
+
+Observed, both on the feature branch and on upstream `main`:
+
+  splash screen renders correctly
+  audio test tones play
+  main screen is garbled
+  no key tones, no power button, battery pull required to recover
+  zero bytes of debug UART, on a DEBUG=1 build whose first act is a dbg_puts
+
+The splash rendering correctly is the useful part: the LCD panel, timing and
+driver all work, so the fault is above the display driver, not in it.
+
+Everything still working is code that runs inside `main()` during init.
+Everything dead is driven by a **scheduler task** — keypad, power button,
+display refresh, UI. That points at `sched_run()` or its dispatch, but it could
+not be narrowed further, because:
+
+**There is no instrumentation on this radio.** `dbg_puts` writes UART4 on PC10,
+which IS the programming cable, so a DEBUG build should print — and produced
+nothing across four attempts. Fixing that is the prerequisite for any further
+firmware debugging. Debugging the scheduler blind, on the only radio, with a
+battery pull per cycle, is not worth it.
+
+Radio was restored to OEM V0.27 and is working. Channel data was never at risk:
+it lives in external SPI flash, which firmware upload does not touch.
+
+### Next on the radio
 
 The feature branch **builds but has never run on hardware**. Worth testing in
 this order, since each depends on the one before:
 
-1. Does `task_ui` drain the queue without starving anything? It is the first
-   consumer the queue has ever had.
-2. Does the picker open on the first detent and NOT move the highlight?
-3. Does MENU commit and actually retune? `ui_commit_channel` calls
-   `channel_to_vfo`, which is not verified.
-4. Does `*` open the checklist, and does toggling survive a power cycle?
+Do these in order — the first one gates everything else.
+
+1. **Get debug UART working.** Nothing else is efficient until boot output is
+   visible. Check whether `debug_uart_init()` is reached and whether PC10 is
+   being reconfigured afterwards by another init (LCD/XMC pin setup is a
+   candidate — it claims a lot of GPIO).
+2. Find out whether `sched_run()` is entered and whether its loop turns.
+   Everything dead is a scheduler task; everything alive runs before it.
+3. Only then re-test the picker: does it open on the first detent without
+   moving the highlight, does MENU commit and retune, does `*` open the
+   checklist, does a toggle survive a power cycle?
 
 ## Open
 
