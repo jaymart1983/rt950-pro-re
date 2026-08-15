@@ -28,6 +28,8 @@ rather have it installed system-wide, run that cask install yourself.
 - Channel record decoded and **selftest-verified**: 91/91 records re-encode
   byte-identically
 - Zone names located at **0xC000** (see the correction in FINDINGS §4)
+- Zone-enable state now persisted in spare `settings_t` bytes — the OEM's own
+  copy at SRAM 0x2000A394 is rebuilt at boot and could not be reused
 - Channel plan recovered from the radio, which was the only surviving copy —
   the Idaho/Utah/Nevada repeater list is back, round-tripping to zero byte diffs
 - Function catalogue: 156 entries, recovered from Ghidra plate comments
@@ -59,9 +61,10 @@ this order, since each depends on the one before:
 - `port_catalog.py` and `rf_register_match.py` are not yet rebuilt.
 - Picker frequency mode is declared but not implemented; channel mode only.
 - `*` opening the zone checklist is provisional; it belongs behind a Menu entry.
-- Transmit power: no field for it has been found in the channel record.
-- Zone-enable state is derived at boot, not persisted — the filter feature needs
-  its own storage.
+- Transmit power is at record byte 0x0E, low nibble (per Hertzz58's channel.h).
+  Marked *derived*, not confirmed: every record in the dump holds the same
+  value, so the dump cannot distinguish layouts. A dump of a radio programmed
+  with mixed power levels would settle it.
 
 ## Watch out
 
