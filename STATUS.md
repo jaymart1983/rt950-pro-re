@@ -62,11 +62,20 @@ Everything dead is driven by a **scheduler task** — keypad, power button,
 display refresh, UI. That points at `sched_run()` or its dispatch, but it could
 not be narrowed further, because:
 
-**There is no instrumentation on this radio.** `dbg_puts` writes UART4 on PC10,
-which IS the programming cable, so a DEBUG build should print — and produced
-nothing across four attempts. Fixing that is the prerequisite for any further
-firmware debugging. Debugging the scheduler blind, on the only radio, with a
-battery pull per cycle, is not worth it.
+**RETRACTED: "this radio has no working debug UART."** That was wrong, and it
+was my own tooling bug. `serial_monitor` in firmware_upload.py printed without
+flushing; piped to a file, Python block-buffers at 8 KB, so a few hundred bytes
+of boot trace never left the buffer — and killing the monitor with a signal
+discarded it. Four empty captures were four empty *pipes*, not a silent radio.
+
+The UART almost certainly worked the whole time. `dbg_init()` runs at the end
+of `SystemInit` with the PLL already up (BRR 521 is correct for APB1 at
+60 MHz), and it ends in `dbg_flush()` spinning on TC — since the splash screen
+appears, that spin returned, which means the UART transmitted.
+
+Fixed, and verified end-to-end against a virtual serial port: lines now arrive
+promptly through a pipe. Diagnosing dead hardware from silence requires the
+silence to be real.
 
 Radio was restored to OEM V0.27 and is working. Channel data was never at risk:
 it lives in external SPI flash, which firmware upload does not touch.
@@ -78,15 +87,28 @@ this order, since each depends on the one before:
 
 Do these in order — the first one gates everything else.
 
-1. **Get debug UART working.** Nothing else is efficient until boot output is
-   visible. Check whether `debug_uart_init()` is reached and whether PC10 is
-   being reconfigured afterwards by another init (LCD/XMC pin setup is a
-   candidate — it claims a lot of GPIO).
-2. Find out whether `sched_run()` is entered and whether its loop turns.
-   Everything dead is a scheduler task; everything alive runs before it.
-3. Only then re-test the picker: does it open on the first detent without
-   moving the highlight, does MENU commit and retune, does `*` open the
-   checklist, does a toggle survive a power cycle?
+Instrumentation is fixed, so this is now one bootloader session. Four images
+are prebuilt in `rt950-scratch/images/`; flash each with
+
+    tools/flash_and_watch.sh images/<name>.BTF
+
+which releases the port, uploads, and captures the trace to `logs/`.
+
+1. **`01-feature-DEBUG.BTF`** — the real build. The trace answers everything at
+   once: `[DBG] app_init complete` proves init finished, `[SCHED] run: tasks=11`
+   proves the scheduler started, and repeating `[SCHED] hb t=` proves its loop
+   turns. `[KBD_DIAG]` lines every 2 s show raw keypad GPIO; `[KEY] press:`
+   appears if a key is actually detected.
+2. If the scheduler runs but input is dead → **`02-hwtest9-keypad.BTF`**,
+   which exercises keypad and encoder with nothing else running.
+3. If the main screen is still garbled → **`03-hwtest3-lcd.BTF`** draws a test
+   pattern, separating the display driver from `display_draw_main_screen()`.
+4. **`04-hwtest11-diag.BTF`** is the full diagnostic if the picture is still
+   unclear.
+
+Only once the radio is functional does re-testing the picker mean anything:
+does it open on the first detent without moving the highlight, does MENU commit
+and retune, does `*` open the checklist, does a toggle survive a power cycle?
 
 ## Open
 
