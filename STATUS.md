@@ -1,0 +1,60 @@
+# RT-950 Pro — status
+
+Start here. Updated 2026-08-15.
+
+## Where things live
+
+| what | where |
+|---|---|
+| RE notes, catalogue, tooling | `github.com/jaymart1983/rt950-pro-re` (this repo) |
+| Custom firmware | `github.com/jaymart1983/Radtel-RT950-Pro-Firmware`, fork of Hertzz58 |
+| Radio dump | `out/radio_dump_v029/` — **local only**, not committed |
+| RT-900 vendor source | `rt900/` — **local only**, no licence |
+| Ghidra exports | `ghidra_out_true/` — **local only**, derivative work |
+
+The ARM toolchain is at `~/.local/arm-none-eabi/bin`. Add it to PATH:
+
+```bash
+export PATH="$HOME/.local/arm-none-eabi/bin:$PATH"
+```
+
+It was extracted from the package Homebrew downloaded, because
+`brew install --cask gcc-arm-embedded` needs an admin password. If you would
+rather have it installed system-wide, run that cask install yourself.
+
+## Done
+
+- Image layout settled: three regions, base 0x08003000, key block never programmed
+- Channel record decoded and **selftest-verified**: 91/91 records re-encode
+  byte-identically
+- Zone names located at **0xC000** (see the correction in FINDINGS §4)
+- Channel plan recovered from the radio, which was the only surviving copy —
+  the Idaho/Utah/Nevada repeater list is back, round-tripping to zero byte diffs
+- Function catalogue: 156 entries, recovered from Ghidra plate comments
+- Firmware builds: text 36,980 / data 108 / bss 7,620
+
+## Open
+
+- **PR #2 needs updating.** It still contains the wrong 0xA200 zone address in
+  its first commit, with a revert on top. Squash or re-open cleanly before
+  asking Hertzz58 to merge — do not send a PR whose history proposes a
+  regression and then undoes it.
+- The Ghidra project's 53 stale `0x080xxxxx`-named functions are still there.
+- `port_catalog.py` and `rf_register_match.py` are not yet rebuilt.
+- Transmit power: no field for it has been found in the channel record.
+- Zone-enable state is derived at boot, not persisted — the filter feature needs
+  its own storage.
+
+## Watch out
+
+1. **Power-cycle the radio after every channel write.** It caches the list at
+   boot; a stale display looks exactly like a failed write.
+2. **Run `--selftest` before writing anything to the radio.** It has caught two
+   real encoder faults.
+3. **Verify naming runs by counting named functions**, not by exit status. The
+   apply script has silently applied zero names twice while exiting 0.
+4. **Do not trust the RT-900 source for absolute addresses.** Structure yes,
+   addresses no. See FINDINGS §4.
+5. **This machine's filesystem is case-insensitive.** `rm -rf rt950-pro` deleted
+   `RT950-Pro`. That is how the working tree was lost. Everything that matters
+   is now pushed to GitHub; keep it that way.
