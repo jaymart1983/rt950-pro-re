@@ -1,0 +1,14 @@
+# Derivative works of Radtel's copyrighted firmware — never commit these.
+ghidra_out*/
+*.bin
+*.BTF
+*.elf
+*.hex
+annotated.c
+decompiled.c
+
+# The radio owner's own configuration and per-unit calibration.
+radio_dump*/
+
+# Vendor source releases of unknown licence (RT-900 etc) stay local.
+rt900/
