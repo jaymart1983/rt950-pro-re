@@ -171,7 +171,141 @@ therefore needs its own storage; it cannot reuse this.
 
 ---
 
-## 8. Standing lessons
+## 8. Hardware bring-up — confirmed on the radio
+
+Everything below was measured on a physical RT-950 Pro, not inferred.
+
+### 8.1 The bootloader drops the last block of every upload
+
+Confirmed by having the firmware checksum its own flash a kilobyte at a time and
+comparing against the `.bin`:
+
+```
+BLK 0..7   match exactly
+BLK 8      53907 expected, 106141 actual    <- last block sent
+```
+
+Padding the image to a whole number of blocks was **not** sufficient; with the
+image at exactly ten full blocks the last one still failed. `encrypt_btf.py` now
+appends a whole sacrificial block of `0xFF`.
+
+This one fault produced three unrelated-looking symptoms, each chased separately
+for hours:
+
+* LCD font glyphs rendering as garbage ("looks Chinese")
+* `HANDSHAKE[]` reading as random bytes, so the update listener never matched
+* almost certainly the garbled main screen that started the whole investigation
+
+Late `.rodata` lives in that tail. Anything at the end of the image is at risk.
+
+### 8.2 The bootloader has no soft entry — the app must program itself
+
+Its `main()` is:
+
+```
+gpio_init / lcd_gpio_init / uart_init
+check_update_button   -> uart_update_mode
+check_spi_model / check_spi_flag
+-> otherwise jump to the application
+```
+
+Physical buttons or an SPI-flash marker. **No RAM flag, no magic value, no
+command.** Hours went into faking the side-button GPIOs, branching to its reset
+vector, and calling `uart_update_mode()` directly. None of it could have worked.
+
+Radtel's own firmware never tries. The RT-900 source shows the application
+setting `MODE_FLASH_PROGRAM`, programming flash itself, and calling
+`NVIC_SystemReset()` when done. The bootloader is a **recovery** path, not an
+update path. `src/app/updater.c` now does the same, and zero-touch flashing
+works.
+
+The updater must buffer the whole image before writing anything: interleaving
+receive with erase loses every byte arriving during a sector erase (the UART
+holds one byte and interrupts are off). It failed reproducibly at block 8.
+
+### 8.3 UART: CR2/CR3 were never initialised
+
+UART4 inherited the bootloader's framing configuration, giving consistent
+per-byte corruption that looked like a baud error but was not — a sweep from
+104k to 136k produced a flat plateau of identical wrong bytes.
+
+```
+sent:  74 69 63 6b 20 23    "tick #"
+recv:  b6 20 b4 e6 5e 3e
+```
+
+### 8.4 The hardware tests printed to the wrong UART
+
+`hw_test.c` defines its own `dbg_puts` writing to **USART1 — the Bluetooth
+port** — shadowing the global one that writes UART4. Every test printed
+diagnostics nothing could receive, so a working test was indistinguishable from
+a dead radio.
+
+### 8.5 Keypad — the pinmap's matrix table is wrong in every position
+
+Measured by driving each column and reading raw rows with a key held:
+
+| driven | keys | table claimed |
+|---|---|---|
+| PC0 | OK, ABC, Back, V/M | 1 4 7 ★ |
+| PC1 | 3, 6, 9, # | 2 5 8 0 |
+| PC2 | 2, 5, 8, 0 | 3 6 9 # |
+| PC3 | Up, Down, Left, Right | OK ABC Back V/M |
+| all HIGH | 1, 4, 7, ★ | the arrows |
+
+Three separate faults, all needed fixing:
+
+1. **Mapping** — `col * 4 + row` assumed the table's order.
+2. **Settle time** — `scan_delay()` spun 10 times, under a microsecond. Rows use
+   the internal pull-ups (~40k) and need far longer. Symptom: correct ROW every
+   time, always attributed to PC0.
+3. **Scan order** — the 5th-column keys are driven by nothing and pull their row
+   low in every state, so PC0 claimed them. The all-high state is now tested
+   first.
+
+Key legends do **not** match the constant names: `KEY_A_VFO` is the ABC key,
+`KEY_B_SCAN` is Back, `KEY_C_MENU` is OK, `KEY_D_BAND` is V/M.
+
+### 8.6 The encoder is half-step
+
+One physical click produces **two** quadrature transitions, not four. Emitting a
+detent every 4 steps halved every movement. `ENC_STEPS_PER_DETENT` is 2.
+
+### 8.7 Power — deep sleep, not a hardware cut
+
+Releasing the PB9 latch does **not** collapse the rail. Proven: the CPU keeps
+executing afterwards, which it could not do if the supply had dropped.
+
+`power_off()` originally ended in `for (;;) __WFI()`, which hung the CPU with
+interrupts masked — the radio looked off but was alive and unrecoverable without
+a battery pull.
+
+It now enters **STOP mode**, woken by the switch on **EXTI line 0** (PE0). Every
+clock halted, microamps, immediate wake. Off and on both work from the knob.
+
+**PA11, labelled "DEVICE POWER OFF" in the pinmap, does nothing on either
+polarity.** That label is `HW_PROBED` — inferred, not observed — and is wrong,
+exactly like the keypad table. The OEM shutdown address cited in `power.c`
+(`0x0801E2A4`) also holds unrelated code. A genuine hardware cut has not been
+found; the remaining lead is the full OEM decompile.
+
+### 8.8 Anything registered with sched_register() is invisible to HW_TEST
+
+`HW_TEST` builds do not run the scheduler. `power_button_poll()` and the encoder
+task are registered that way, so both looked completely dead in test builds when
+the code was fine. This cost time twice.
+
+### 8.9 Other confirmed
+
+* **SPI flash reads correctly** — channel 1 returns `GMRS 1 / 462.5625 MHz`,
+  byte-identical to the dump. `spi_flash_read_id()` is buggy though, returning
+  `5E 40 16` instead of `EF 40 15`; data reads are unaffected.
+* **LCD** — text, 240x320 geometry and native RGB565 all confirmed. Two driver
+  bugs fixed: `lcd_set_data` read-modify-wrote the whole GPIOD register (the
+  keypad rows are PD4-PD7 on that port), and the WR strobe was ~33 ns with no
+  setup time, which could put the address window in the wrong place.
+
+## 9. Standing lessons
 
 1. **Read the prose first.** Two multi-hour detours would have been avoided by
    reading a docstring and a README that were already on disk.
@@ -183,3 +317,11 @@ therefore needs its own storage; it cannot reuse this.
    addresses.**
 5. **Round-trip tests catch what re-reading notes does not.** Both layout
    corrections in this document came from the selftest failing, not from review.
+6. **Measure the hardware; do not trust the pinmap.** Its keypad matrix table
+   was wrong in every position, and `PA11 "DEVICE POWER OFF"` does nothing.
+   Labels marked `HW_PROBED` are guesses. `BINARY_VERIFIED` ones held up.
+7. **Read Radtel's own source before theorising.** The RT-900 release answered
+   both the flashing architecture and the power-off reset in minutes, after
+   hours of reasoning in the wrong direction on each.
+8. **A test whose pass and fail states look identical is not a test.** Blinky
+   toggled a backlight over an empty framebuffer — black screen either way.
